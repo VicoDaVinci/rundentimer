@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Rundentimer</title>
+  <meta name="description" content="Simpler Rundentimer für Kampfsport">
+  <meta name="theme-color" content="#111111">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Rundentimer">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Einstellungen -->
+  <main id="setup" class="screen">
+    <h1>Rundentimer</h1>
+
+    <div class="presets" id="presets"></div>
+    <p class="preset-hint hidden" id="presetHint">Eigenen Timer gedrückt halten zum Ändern oder Löschen</p>
+
+    <div class="settings">
+      <div class="row" data-key="round">
+        <span class="label">Runde</span>
+        <button class="step" data-dir="-1" aria-label="Runde kürzer">−</button>
+        <span class="value"></span>
+        <button class="step" data-dir="1" aria-label="Runde länger">+</button>
+      </div>
+      <div class="row" data-key="rest">
+        <span class="label">Pause</span>
+        <button class="step" data-dir="-1" aria-label="Pause kürzer">−</button>
+        <span class="value"></span>
+        <button class="step" data-dir="1" aria-label="Pause länger">+</button>
+      </div>
+      <div class="row" data-key="rounds">
+        <span class="label">Runden</span>
+        <button class="step" data-dir="-1" aria-label="Weniger Runden">−</button>
+        <span class="value"></span>
+        <button class="step" data-dir="1" aria-label="Mehr Runden">+</button>
+      </div>
+      <div class="row" data-key="prep">
+        <span class="label">Vorlauf</span>
+        <button class="step" data-dir="-1" aria-label="Vorlauf kürzer">−</button>
+        <span class="value"></span>
+        <button class="step" data-dir="1" aria-label="Vorlauf länger">+</button>
+      </div>
+    </div>
+
+    <p class="total" id="total"></p>
+
+    <button class="big start" id="startBtn">Start</button>
+  </main>
+
+  <!-- Laufender Timer -->
+  <main id="run" class="screen hidden">
+    <div class="top">
+      <div class="phase" id="phaseLabel"></div>
+    </div>
+    <div class="time" id="time">0:00</div>
+    <div class="paused-hint hidden" id="pausedHint">PAUSIERT</div>
+    <div class="progress"><div id="bar"></div></div>
+    <div class="controls">
+      <button class="big ghost" id="skipBtn">Weiter&nbsp;›</button>
+      <button class="big solid" id="pauseBtn">Pause</button>
+    </div>
+    <button class="stop hidden" id="stopBtn">Training beenden</button>
+  </main>
+
+  <!-- Fertig -->
+  <main id="done" class="screen hidden">
+    <div class="done-title">Fertig</div>
+    <p class="done-sub" id="doneSub"></p>
+    <button class="big start" id="backBtn">Zurück</button>
+  </main>
+
+  <!-- Eigenen Timer speichern / bearbeiten -->
+  <div class="sheet-backdrop hidden" id="sheet">
+    <form class="sheet" id="sheetForm" autocomplete="off">
+      <h2 id="sheetTitle">Eigener Timer</h2>
+      <input id="sheetName" type="text" maxlength="12" placeholder="Name, z.B. Sparring" enterkeyhint="done">
+      <p class="sheet-values" id="sheetValues"></p>
+      <button type="submit" class="big start" id="sheetSave">Speichern</button>
+      <button type="button" class="sheet-btn overwrite hidden" id="sheetOverwrite"></button>
+      <div class="sheet-row">
+        <button type="button" class="sheet-btn danger hidden" id="sheetDelete">Löschen</button>
+        <button type="button" class="sheet-btn" id="sheetCancel">Abbrechen</button>
+      </div>
+    </form>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
