@@ -263,6 +263,21 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+.sound-hint {
+  align-self: center;
+  margin-top: 8px;
+  padding: 14px 22px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #111111;
+  font-size: 18px;
+  font-weight: 800;
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse { 50% { transform: scale(1.05); } }
+body.flash .sound-hint { background: #111111; color: #ffffff; }
+
 .paused-hint {
   font-size: 20px;
   font-weight: 800;

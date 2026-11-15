@@ -249,19 +249,31 @@ let master = null;
 let bus = null;        // Sammelkanal für eingeplante Töne (zum Abbrechen trennbar)
 let noiseBuf = null;
 let anchor = null;     // {ctxT, e}: Audio-Uhrzeit ↔ Trainingszeit
+let silentSince = null; // seit wann der Tonkanal nicht läuft (ms) – für den Hinweis
 
 const keepAlive = new Audio('silence.wav');
 keepAlive.loop = true;
 keepAlive.preload = 'auto';
 keepAlive.setAttribute('playsinline', '');
 
-function initAudio() {
+// fresh = true: Tonkanal auf jeden Fall neu erzeugen (bei jedem Start).
+// Außerdem wird ein Kanal ersetzt, der nicht läuft. iOS lässt einen Kanal nach
+// Unterbrechungen (Anruf, Siri, andere App) manchmal dauerhaft stumm.
+function initAudio(fresh = false) {
   // iOS: "playback" = Töne auch bei Lautlos-Schalter und möglichst auch im Hintergrund
   try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
 
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+
+  if (ctx && (fresh || ctx.state !== 'running')) {
+    cancelSounds();
+    const old = ctx;
+    ctx = null;
+    old.close().catch(() => {});
+  }
+
   if (!ctx) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
     ctx = new AC();
     const comp = ctx.createDynamicsCompressor();
     master = ctx.createGain();
@@ -273,7 +285,9 @@ function initAudio() {
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   }
-  if (ctx.state !== 'running') ctx.resume();
+  if (ctx.state !== 'running') ctx.resume().catch(() => {});
+  silentSince = null;
+  $('soundHint').classList.add('hidden');
 
   // iOS "entsperrt" Audio erst, wenn innerhalb eines Fingertipps etwas abgespielt wird
   const src = ctx.createBufferSource();
@@ -459,7 +473,7 @@ function phaseAt(e) {
 }
 
 function start() {
-  initAudio();
+  initAudio(true); // jedes Training mit frischem Tonkanal
   keepAlive.currentTime = 0;
   keepAlive.play().catch(() => {});
   setupMediaSession();
@@ -547,9 +561,16 @@ function tick() {
   // Läuft die Audio-Uhr nicht mehr synchron (z.B. weil iOS das Audio
   // im Hintergrund kurz angehalten hat), Töne neu einplanen.
   if (ctx && pausedAt === null) {
-    if (ctx.state !== 'running') ctx.resume();
+    if (ctx.state !== 'running') ctx.resume().catch(() => {});
     if (ctx.state === 'running' && (!anchor || Math.abs(ctx.currentTime - (anchor.ctxT + (e - anchor.e))) > .25)) scheduleSounds();
   }
+
+  // Bleibt der Tonkanal länger als 1,5 s stumm, obwohl die App sichtbar ist:
+  // Hinweis zeigen. iOS erlaubt das Wiedereinschalten nur per Fingertipp.
+  const silent = ctx && pausedAt === null && document.visibilityState === 'visible' && ctx.state !== 'running';
+  if (!silent) silentSince = null;
+  else if (silentSince === null) silentSince = Date.now();
+  $('soundHint').classList.toggle('hidden', !(silent && Date.now() - silentSince > 1500));
 
   const p = phases[i];
   const remaining = p.start + p.dur - e;
@@ -578,11 +599,19 @@ $('skipBtn').addEventListener('click', skipPhase);
 $('stopBtn').addEventListener('click', () => { stop(); showScreen('setup'); });
 $('backBtn').addEventListener('click', () => showScreen('setup'));
 
+// Hinweis "Ton ist aus" antippen: neuen Tonkanal erzeugen und Töne neu einplanen
+$('soundHint').addEventListener('click', () => {
+  initAudio(true);
+  keepAlive.play().catch(() => {});
+  scheduleSounds();
+  tick();
+});
+
 // Nach dem Zurückkehren in die App: Bildschirmsperre erneut anfordern
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && ticker) {
     lockScreen();
-    if (ctx && ctx.state !== 'running') ctx.resume();
+    if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
     tick();
   }
 });

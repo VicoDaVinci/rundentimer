@@ -1,6 +1,6 @@
 // Offline-Cache: Die App funktioniert nach dem ersten Öffnen auch ohne Internet.
 // Bei Änderungen an der App die Versionsnummer erhöhen.
-const CACHE = 'rundentimer-v3';
+const CACHE = 'rundentimer-v4';
 const FILES = [
   './',
   'index.html',
