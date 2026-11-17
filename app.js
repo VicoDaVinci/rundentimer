@@ -247,6 +247,8 @@ $('sheet').addEventListener('click', (e) => { if (e.target === $('sheet')) close
 let ctx = null;
 let master = null;
 let bus = null;        // Sammelkanal für eingeplante Töne (zum Abbrechen trennbar)
+let busLoud = null;    // dasselbe für die lauten Töne
+let loudIn = null;     // Eingang des lauten Ausgangs
 let noiseBuf = null;
 let anchor = null;     // {ctxT, e}: Audio-Uhrzeit ↔ Trainingszeit
 let silentSince = null; // seit wann der Tonkanal nicht läuft (ms) – für den Hinweis
@@ -275,15 +277,7 @@ function initAudio(fresh = false) {
 
   if (!ctx) {
     ctx = new AC();
-    const comp = ctx.createDynamicsCompressor();
-    master = ctx.createGain();
-    master.gain.value = 0.9;
-    master.connect(comp);
-    comp.connect(ctx.destination);
-
-    noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-    const d = noiseBuf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    buildChain(ctx);
   }
   if (ctx.state !== 'running') ctx.resume().catch(() => {});
   silentSince = null;
@@ -296,8 +290,40 @@ function initAudio(fresh = false) {
   src.start(0);
 }
 
+// Zwei Ausgänge:
+//  - normal: Kompressor, für Rundenstart-Glocke und Klapper
+//  - laut:   Verstärkung + weiche Sättigung (wie ein übersteuerter Verstärker),
+//            für 3-2-1 und die Schlussglocken. Das hebt die gefühlte Lautstärke
+//            deutlich an, ohne hart zu verzerren.
+function buildChain(c) {
+  const comp = c.createDynamicsCompressor();
+  master = c.createGain();
+  master.gain.value = 0.9;
+  master.connect(comp);
+  comp.connect(c.destination);
+
+  const shaper = c.createWaveShaper();
+  const n = 2048, k = 2.5, curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    curve[i] = Math.tanh(k * x) / Math.tanh(k);
+  }
+  shaper.curve = curve;
+  shaper.oversample = '4x';
+  const out = c.createGain();
+  out.gain.value = 0.97;
+  loudIn = c.createGain();
+  loudIn.connect(shaper);
+  shaper.connect(out);
+  out.connect(c.destination);
+
+  noiseBuf = c.createBuffer(1, c.sampleRate, c.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+}
+
 // Ringglocke wie beim Boxen: mehrere unharmonische Obertöne, die ausklingen
-function bell(t, length = 2.2) {
+function bell(t, length = 2.2, out = bus, vol = 1) {
   const base = 610;
   const partials = [[1, 1], [2.0, .55], [2.76, .5], [4.07, .28], [5.4, .18], [6.8, .1]];
   for (const [ratio, gain] of partials) {
@@ -307,16 +333,16 @@ function bell(t, length = 2.2) {
     o.frequency.value = base * ratio;
     const dur = length / Math.sqrt(ratio);
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(gain * .45, t + .004);
+    g.gain.linearRampToValueAtTime(gain * .45 * vol, t + .004);
     g.gain.exponentialRampToValueAtTime(.0001, t + dur);
-    o.connect(g); g.connect(bus);
+    o.connect(g); g.connect(out);
     o.start(t); o.stop(t + dur + .05);
   }
-  noise(t, .03, 3500, .35); // metallischer Anschlag
+  noise(t, .03, 3500, .35 * vol, out); // metallischer Anschlag
 }
 
 // Kurzer Piepton für 3-2-1
-function beep(t, freq, dur = .14) {
+function beep(t, freq, dur = .14, out = bus, vol = 1) {
   const o = ctx.createOscillator();
   const f = ctx.createBiquadFilter();
   const g = ctx.createGain();
@@ -325,15 +351,15 @@ function beep(t, freq, dur = .14) {
   f.type = 'lowpass';
   f.frequency.value = 3000;
   g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(.22, t + .005);
-  g.gain.setValueAtTime(.22, t + dur - .03);
+  g.gain.linearRampToValueAtTime(.22 * vol, t + .005);
+  g.gain.setValueAtTime(.22 * vol, t + dur - .03);
   g.gain.linearRampToValueAtTime(0, t + dur);
-  o.connect(f); f.connect(g); g.connect(bus);
+  o.connect(f); f.connect(g); g.connect(out);
   o.start(t); o.stop(t + dur + .02);
 }
 
 // Rauschstoß (für Klapper und Glockenanschlag)
-function noise(t, dur, freq, vol) {
+function noise(t, dur, freq, vol, out = bus) {
   const src = ctx.createBufferSource();
   src.buffer = noiseBuf;
   const f = ctx.createBiquadFilter();
@@ -343,17 +369,23 @@ function noise(t, dur, freq, vol) {
   const g = ctx.createGain();
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(.001, t + dur);
-  src.connect(f); f.connect(g); g.connect(bus);
+  src.connect(f); f.connect(g); g.connect(out);
   src.start(t, Math.random() * .5, dur + .01);
 }
 
+// Lautstärken (gemessen ggü. der ersten Version):
+// BEEP_VOL = 3-2-1, ca. +6 dB lauter
+// END_VOL  = Schlussglocken, ca. +10 dB lauter (am digitalen Maximum)
+const BEEP_VOL = 0.65;
+const END_VOL = 3.2;
+
 const sound = {
   roundStart: (t) => bell(t, 2.4),
-  roundEnd:   (t) => { bell(t, 1.2); bell(t + .32, 1.2); bell(t + .64, 2.0); },
+  roundEnd:   (t) => { for (const [d, l] of [[0, 1.4], [.32, 1.4], [.64, 2.4]]) bell(t + d, l, busLoud, END_VOL); },
   warn:       (t) => { noise(t, .05, 1800, 1.6); noise(t + .16, .05, 1800, 1.6); }, // Holzklapper
-  countRound: (t) => beep(t, 620),   // 3-2-1 vor Rundenende (tiefer)
-  countRest:  (t) => beep(t, 1040),  // 3-2-1 vor Rundenstart (höher)
-  finish:     (t) => { bell(t, 1.2); bell(t + .32, 1.2); bell(t + .64, 1.2); bell(t + .96, 2.6); },
+  countRound: (t) => beep(t, 620, .16, busLoud, BEEP_VOL),   // 3-2-1 vor Rundenende (tiefer)
+  countRest:  (t) => beep(t, 1040, .16, busLoud, BEEP_VOL),  // 3-2-1 vor Rundenstart (höher)
+  finish:     (t) => { for (const [d, l] of [[0, 1.4], [.32, 1.4], [.64, 1.4], [.96, 3.0]]) bell(t + d, l, busLoud, END_VOL); },
 };
 
 // Liste aller Signale einer Einheit: [{at: Sekunde, type}]
@@ -378,6 +410,7 @@ function buildEvents() {
 // Alte Planung verwerfen
 function cancelSounds() {
   if (bus) { bus.disconnect(); bus = null; }
+  if (busLoud) { busLoud.disconnect(); busLoud = null; }
   anchor = null;
 }
 
@@ -387,6 +420,8 @@ function scheduleSounds() {
   if (!ctx || pausedAt !== null) return;
   bus = ctx.createGain();
   bus.connect(master);
+  busLoud = ctx.createGain();
+  busLoud.connect(loudIn);
   const e = elapsedSec();
   const now = ctx.currentTime + .03;
   anchor = { ctxT: now, e };

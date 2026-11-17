@@ -1,6 +1,6 @@
 // Offline-Cache: Die App funktioniert nach dem ersten Öffnen auch ohne Internet.
 // Bei Änderungen an der App die Versionsnummer erhöhen.
-const CACHE = 'rundentimer-v4';
+const CACHE = 'rundentimer-v5';
 const FILES = [
   './',
   'index.html',
@@ -14,7 +14,10 @@ const FILES = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)));
+  // cache: 'reload' = immer frisch vom Server holen, nicht aus dem Browser-Zwischenspeicher.
+  // Sonst landet nach einem Update evtl. noch die alte Version im Offline-Speicher.
+  e.waitUntil(caches.open(CACHE).then((c) =>
+    c.addAll(FILES.map((f) => new Request(f, { cache: 'reload' })))));
   self.skipWaiting();
 });
 
